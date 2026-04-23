@@ -31,7 +31,7 @@
         "transparent": true,
         "alwaysOnTop": true,
         "skipTaskbar": true,
-        "url": "index.html"
+        "url": "index.html#overlay"
       }
     ],
     "trayIcon": {

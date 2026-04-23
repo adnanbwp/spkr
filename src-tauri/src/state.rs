@@ -1,6 +1,6 @@
 use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 
 use crate::settings::{AppSettings};
 
@@ -44,12 +44,20 @@ impl Default for AppState {
 // Internal helper: transition to a new state and emit event to all windows
 pub fn set_state(app: &tauri::AppHandle, state: &AppState, new_state: RecordingState) {
     let state_str = new_state.as_str().to_string();
+    let is_inactive = matches!(new_state, RecordingState::Inactive);
     {
         let mut recording_state = state.recording_state.lock().unwrap();
         *recording_state = new_state;
     }
     if let Err(e) = app.emit("state-changed", serde_json::json!({ "state": state_str })) {
         eprintln!("Failed to emit state-changed event: {e}");
+    }
+    if let Some(overlay) = app.get_webview_window("overlay") {
+        if is_inactive {
+            let _ = overlay.hide();
+        } else {
+            let _ = overlay.show();
+        }
     }
 }
 

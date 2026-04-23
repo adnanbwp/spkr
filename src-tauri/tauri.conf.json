@@ -31,7 +31,8 @@
         "transparent": true,
         "alwaysOnTop": true,
         "skipTaskbar": true,
-        "focus": false,
+        "focused": false,
+        "frameless": true,
         "url": "index.html"
       }
     ],

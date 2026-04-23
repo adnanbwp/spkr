@@ -1,25 +1,20 @@
 <script lang="ts">
   import Overlay from './Overlay.svelte';
+  import Settings from './Settings.svelte';
   import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 
-  // Use Tauri window label for routing — works correctly in both dev and prod.
-  // Hash-based routing was unreliable in dev mode because Tauri sends all windows
-  // to the same devUrl (http://localhost:1420) without the hash fragment.
-  const isOverlay = getCurrentWebviewWindow().label === 'overlay';
+  const label = getCurrentWebviewWindow().label;
 </script>
 
-{#if isOverlay}
+{#if label === 'overlay'}
   <Overlay />
 {:else}
-  <main>
-    <h1>spkr Settings</h1>
-  </main>
+  <Settings />
 {/if}
 
 <style>
-  main {
-    text-align: center;
-    padding: 1em;
+  :global(body) {
+    margin: 0;
     background-color: #242424;
     min-height: 100vh;
   }

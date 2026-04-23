@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager};
 
@@ -28,7 +28,7 @@ impl RecordingState {
 pub struct AppState {
     pub recording_state: Mutex<RecordingState>,
     pub settings: Mutex<AppSettings>,
-    pub audio_buffer: Mutex<Vec<f32>>,
+    pub audio_buffer: Arc<Mutex<Vec<f32>>>,
 }
 
 impl Default for AppState {
@@ -36,7 +36,7 @@ impl Default for AppState {
         Self {
             recording_state: Mutex::new(RecordingState::Inactive),
             settings: Mutex::new(AppSettings::default()),
-            audio_buffer: Mutex::new(Vec::new()),
+            audio_buffer: Arc::new(Mutex::new(Vec::new())),
         }
     }
 }
@@ -72,10 +72,7 @@ pub fn get_recording_state(state: tauri::State<AppState>) -> Result<String, Stri
     Ok(recording_state.as_str().to_string())
 }
 
-// Transitions to Listening if currently Inactive, or to Inactive if Listening
-// Emits a "state-changed" event to all windows
-#[tauri::command]
-pub fn toggle_listening(app: tauri::AppHandle, state: tauri::State<AppState>) {
+pub fn toggle_listening_internal(app: &tauri::AppHandle, state: &AppState) {
     let new_state = {
         let recording_state = state.recording_state.lock().unwrap();
         match *recording_state {
@@ -83,5 +80,10 @@ pub fn toggle_listening(app: tauri::AppHandle, state: tauri::State<AppState>) {
             _ => RecordingState::Inactive,
         }
     };
-    set_state(&app, &state, new_state);
+    set_state(app, state, new_state);
+}
+
+#[tauri::command]
+pub fn toggle_listening(app: tauri::AppHandle, state: tauri::State<AppState>) {
+    toggle_listening_internal(&app, &state);
 }

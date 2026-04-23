@@ -18,12 +18,13 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-store = "2"
+tauri-plugin-autostart = "2"
 
 # Audio I/O (requires libasound2-dev on Linux)
 cpal = "0.15"
 
 # Whisper for transcription (requires clang, libclang-dev, cmake on Linux)
-whisper-rs = "0.13"
+whisper-rs = "0.16"
 
 # HTTP client
 reqwest = { version = "0.12", features = ["json", "multipart", "stream", "rustls-tls"], default-features = false }

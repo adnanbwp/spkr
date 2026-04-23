@@ -50,8 +50,11 @@ pub fn run() {
             }
 
             // Register app to run at login
-            if let Ok(autostart) = app.autostart_manager() {
-                let _ = autostart.enable();
+            {
+                use tauri_plugin_autostart::ManagerExt;
+                if let Err(e) = app.autolaunch().enable() {
+                    eprintln!("Failed to enable autostart: {e}");
+                }
             }
 
             // Hide settings window on close instead of destroying it so it can be reopened
@@ -67,7 +70,7 @@ pub fn run() {
 
             // Click-through overlay, positioned at top-right of primary monitor with 16px margin
             if let Some(overlay) = app.get_webview_window("overlay") {
-                overlay.set_ignore_cursor_events(true)?;
+                let _ = overlay.set_ignore_cursor_events(true);
 
                 if let Ok(Some(monitor)) = overlay.primary_monitor() {
                     let scale = monitor.scale_factor();
@@ -85,7 +88,7 @@ pub fn run() {
             let menu = Menu::with_items(app, &[&open_item, &toggle_item, &quit_item])?;
 
             TrayIconBuilder::new()
-                .icon(app.default_window_icon().unwrap().clone())
+                .icon(tauri::include_image!("icons/32x32.png"))
                 .menu(&menu)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "open_settings" => {

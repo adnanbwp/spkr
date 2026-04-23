@@ -18,5 +18,7 @@
   main {
     text-align: center;
     padding: 1em;
+    background-color: #242424;
+    min-height: 100vh;
   }
 </style>

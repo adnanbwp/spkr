@@ -54,9 +54,13 @@ pub fn set_state(app: &tauri::AppHandle, state: &AppState, new_state: RecordingS
     }
     if let Some(overlay) = app.get_webview_window("overlay") {
         if is_inactive {
-            let _ = overlay.hide();
+            if let Err(e) = overlay.hide() {
+                eprintln!("Failed to hide overlay: {e}");
+            }
         } else {
-            let _ = overlay.show();
+            if let Err(e) = overlay.show() {
+                eprintln!("Failed to show overlay: {e}");
+            }
         }
     }
 }

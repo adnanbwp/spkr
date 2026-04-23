@@ -27,6 +27,9 @@
   })();
 
   $: isPulsing = currentState === 'Recording';
+  // Svelte-side guard: fallback for the brief moment between window.show()
+  // being called and the state-changed event arriving. The Rust side is
+  // authoritative for window visibility; this prevents a flash render.
   $: isVisible = currentState !== 'Inactive';
 </script>
 

@@ -270,6 +270,9 @@
     color: #e5e5e5;
     font-family: system-ui, sans-serif;
     font-size: 14px;
+    height: 100vh;
+    overflow-y: auto;
+    box-sizing: border-box;
   }
 
   h2 {

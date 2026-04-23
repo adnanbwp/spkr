@@ -1,9 +1,11 @@
 <script lang="ts">
   import Overlay from './Overlay.svelte';
+  import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 
-  // Hash-based routing: #overlay → overlay window, everything else → settings UI
-  const hash = typeof window !== 'undefined' ? window.location.hash : '';
-  const isOverlay = hash === '#overlay';
+  // Use Tauri window label for routing — works correctly in both dev and prod.
+  // Hash-based routing was unreliable in dev mode because Tauri sends all windows
+  // to the same devUrl (http://localhost:1420) without the hash fragment.
+  const isOverlay = getCurrentWebviewWindow().label === 'overlay';
 </script>
 
 {#if isOverlay}

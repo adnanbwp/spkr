@@ -48,27 +48,28 @@ pub fn set_state(app: &tauri::AppHandle, state: &AppState, new_state: RecordingS
         let mut recording_state = state.recording_state.lock().unwrap();
         *recording_state = new_state;
     }
-    let _ = app.emit("state-changed", serde_json::json!({ "state": state_str }));
+    if let Err(e) = app.emit("state-changed", serde_json::json!({ "state": state_str })) {
+        eprintln!("Failed to emit state-changed event: {e}");
+    }
 }
 
 // Returns current state as a string ("Inactive", "Listening", etc.)
 #[tauri::command]
-pub fn get_recording_state(state: tauri::State<AppState>) -> String {
-    let recording_state = state.recording_state.lock().unwrap();
-    recording_state.as_str().to_string()
+pub fn get_recording_state(state: tauri::State<AppState>) -> Result<String, String> {
+    let recording_state = state.recording_state.lock().map_err(|e| e.to_string())?;
+    Ok(recording_state.as_str().to_string())
 }
 
 // Transitions to Listening if currently Inactive, or to Inactive if Listening
 // Emits a "state-changed" event to all windows
 #[tauri::command]
 pub fn toggle_listening(app: tauri::AppHandle, state: tauri::State<AppState>) {
-    let current = {
+    let new_state = {
         let recording_state = state.recording_state.lock().unwrap();
-        recording_state.as_str().to_string()
-    };
-    let new_state = match current.as_str() {
-        "Inactive" => RecordingState::Listening,
-        _ => RecordingState::Inactive,
+        match *recording_state {
+            RecordingState::Inactive => RecordingState::Listening,
+            _ => RecordingState::Inactive,
+        }
     };
     set_state(&app, &state, new_state);
 }

@@ -1,5 +1,5 @@
-mod settings;
 mod state;
+mod settings;
 mod audio;
 mod transcription;
 mod models;

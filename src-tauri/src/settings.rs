@@ -22,10 +22,10 @@ pub enum LocalModel {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSettings {
     pub backend: TranscriptionBackend,
+    // Sent to frontend for display in settings UI; store securely if needed in future
     pub groq_api_key: String,
     pub local_model: LocalModel,
     pub input_device: Option<String>,
-    pub listening_enabled: bool,
     pub global_hotkey: Option<String>,
     pub ptt_hotkey: Option<String>,
 }
@@ -37,7 +37,6 @@ impl Default for AppSettings {
             groq_api_key: String::new(),
             local_model: LocalModel::Base,
             input_device: None,
-            listening_enabled: false,
             global_hotkey: None,
             ptt_hotkey: None,
         }
@@ -45,13 +44,14 @@ impl Default for AppSettings {
 }
 
 #[tauri::command]
-pub fn get_settings(state: State<AppState>) -> AppSettings {
-    let settings = state.settings.lock().unwrap();
-    settings.clone()
+pub fn get_settings(state: State<AppState>) -> Result<AppSettings, String> {
+    let settings = state.settings.lock().map_err(|e| e.to_string())?;
+    Ok(settings.clone())
 }
 
 #[tauri::command]
-pub fn save_settings(state: State<AppState>, settings: AppSettings) {
-    let mut current = state.settings.lock().unwrap();
+pub fn save_settings(state: State<AppState>, settings: AppSettings) -> Result<(), String> {
+    let mut current = state.settings.lock().map_err(|e| e.to_string())?;
     *current = settings;
+    Ok(())
 }

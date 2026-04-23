@@ -1,3 +1,20 @@
 # Worktrees
 .worktrees/
 worktrees/
+
+# Node
+node_modules/
+dist/
+
+# Rust build artifacts
+src-tauri/target/
+
+# Debian packages
+*.deb
+
+# Environment
+.env
+.env.local
+
+# Claude Code session data
+.claude/settings.local.json

@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Capability file for spkr","local":true,"windows":["settings","overlay"],"permissions":["core:default","global-shortcut:allow-register","global-shortcut:allow-unregister","global-shortcut:allow-is-registered","store:allow-load","store:allow-set","store:allow-get","store:allow-save"]}}

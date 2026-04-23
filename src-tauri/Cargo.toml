@@ -1,0 +1,48 @@
+[package]
+name = "spkr"
+version = "0.1.0"
+description = "spkr - Tauri dictation app"
+authors = []
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "spkr_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[features]
+# Enable audio and transcription features once system deps are installed:
+#   sudo apt-get install -y libasound2-dev clang libclang-dev cmake
+audio = ["cpal"]
+transcription = ["whisper-rs"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-store = "2"
+
+# Audio I/O (requires libasound2-dev on Linux)
+cpal = { version = "0.15", optional = true }
+
+# Whisper for transcription (requires clang, libclang-dev, cmake on Linux)
+whisper-rs = { version = "0.13", optional = true }
+
+# HTTP client
+reqwest = { version = "0.12", features = ["json", "multipart", "stream", "rustls-tls"], default-features = false }
+
+# WAV encoding
+hound = "3.5"
+
+# Keyboard/mouse simulation
+enigo = "0.2"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }

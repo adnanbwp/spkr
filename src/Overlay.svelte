@@ -72,7 +72,12 @@
 </script>
 
 {#if isVisible}
+  <!-- Outer row: timing on the left, mic on the right -->
   <div class="container">
+    {#if timingText}
+      <div class="timing">{timingText}</div>
+    {/if}
+
     <div
       class="circle"
       class:pulse={isPulsing}
@@ -112,10 +117,6 @@
         </svg>
       {/if}
     </div>
-
-    {#if timingText}
-      <div class="timing">{timingText}</div>
-    {/if}
   </div>
 {/if}
 
@@ -127,15 +128,20 @@
     overflow: hidden;
   }
 
+  /* Full-width row: timing pill on the left, mic circle on the right */
   .container {
-    width: 80px;
+    width: 320px;
+    height: 80px;
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
     pointer-events: none;
   }
 
   .circle {
+    flex-shrink: 0;
     width: 60px;
     height: 60px;
     border-radius: 50%;
@@ -146,14 +152,13 @@
   }
 
   .timing {
-    margin-top: 4px;
     white-space: nowrap;
-    font-size: 9px;
+    font-size: 10px;
     font-family: monospace;
-    color: rgba(255, 255, 255, 0.8);
-    background: rgba(0, 0, 0, 0.5);
-    border-radius: 3px;
-    padding: 1px 4px;
+    color: rgba(255, 255, 255, 0.9);
+    background: rgba(0, 0, 0, 0.55);
+    border-radius: 4px;
+    padding: 2px 6px;
     pointer-events: none;
   }
 

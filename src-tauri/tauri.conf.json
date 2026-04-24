@@ -23,8 +23,8 @@
       {
         "label": "overlay",
         "title": "spkr Overlay",
-        "width": 80,
-        "height": 80,
+        "width": 320,
+        "height": 100,
         "x": 0,
         "y": 0,
         "visible": false,

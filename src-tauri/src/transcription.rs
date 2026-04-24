@@ -107,7 +107,9 @@ fn run_local(
     let model_load_ms = t0.elapsed().as_millis() as u64;
     eprintln!("[TIMING] model_load={}ms", model_load_ms);
 
+    let t_state = Instant::now();
     let mut state = ctx.create_state().map_err(|e| format!("Whisper state error: {e}"))?;
+    eprintln!("[TIMING] create_state={}ms", t_state.elapsed().as_millis());
 
     let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
     params.set_language(Some("en"));
@@ -122,6 +124,7 @@ fn run_local(
     params.set_suppress_blank(true); // skip blank output fallback
     params.set_suppress_nst(true);   // suppress non-speech tokens
     params.set_temperature(0.0);     // pure greedy, no temperature fallback sampling
+    params.set_debug_mode(false);    // suppress per-token debug output to stderr
 
     // Constrain to actual audio duration — avoids processing empty 30s tail window
     let audio_duration_ms = (audio.len() as i32 * 1000) / 16000;

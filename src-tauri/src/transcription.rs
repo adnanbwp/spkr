@@ -130,6 +130,14 @@ fn run_local(
     let audio_duration_ms = (audio.len() as i32 * 1000) / 16000;
     params.set_duration_ms(audio_duration_ms);
 
+    // Shrink encoder attention window to audio length + 50% headroom,
+    // rounded up to the next 64-frame boundary. Default is 1500 (30s).
+    // 1 mel frame = 10ms at 16kHz; smaller audio_ctx = significantly less encoder work.
+    let mel_frames = (audio.len() as i32 * 100) / 16000; // 100 frames/sec
+    let audio_ctx = ((mel_frames * 3 / 2 + 63) / 64 * 64).clamp(256, 1500);
+    params.set_audio_ctx(audio_ctx);
+    eprintln!("[TIMING] audio_ctx={} (default=1500, {:.0}% of full window)", audio_ctx, audio_ctx as f32 / 1500.0 * 100.0);
+
     let t_infer = Instant::now();
     state
         .full(params, &audio)

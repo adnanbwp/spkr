@@ -16,6 +16,9 @@ use tauri_plugin_autostart::MacosLauncher;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Redirect whisper.cpp / GGML C-level logs away from stderr.
+    // With no log/tracing backend enabled this effectively silences them.
+    whisper_rs::install_logging_hooks();
     tauri::Builder::default()
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec!["--minimized"])))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())

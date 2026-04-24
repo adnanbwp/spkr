@@ -146,11 +146,12 @@ pub async fn stop_recording_internal(app: tauri::AppHandle) -> Result<(), String
         } else {
             raw_audio
         };
-        let audio = if capture_rate != 16000 {
+        let resampled = if capture_rate != 16000 {
             resample(&mono, capture_rate, 16000)
         } else {
             mono
         };
+        let audio = trim_silence(&resampled, 16000);
 
         let t_preprocess_done = Instant::now();
         eprintln!(
@@ -202,6 +203,49 @@ pub async fn stop_recording_internal(app: tauri::AppHandle) -> Result<(), String
 
     set_state(&app, &state, RecordingState::Listening);
     Ok(())
+}
+
+/// Trim leading and trailing silence using a simple energy threshold.
+/// Uses 20ms windows at 16kHz (320 samples). Threshold: RMS > 0.01 (~-40dB).
+/// Never trims below 500ms of audio total.
+fn trim_silence(samples: &[f32], sample_rate: u32) -> Vec<f32> {
+    let window = (sample_rate as usize * 20) / 1000; // 20ms
+    let threshold: f32 = 0.01;
+    let min_samples = sample_rate as usize / 2; // 500ms floor
+
+    if samples.len() <= min_samples {
+        return samples.to_vec();
+    }
+
+    let rms = |chunk: &[f32]| -> f32 {
+        (chunk.iter().map(|s| s * s).sum::<f32>() / chunk.len() as f32).sqrt()
+    };
+
+    let start = samples
+        .chunks(window)
+        .enumerate()
+        .find(|(_, chunk)| rms(chunk) > threshold)
+        .map(|(i, _)| i * window)
+        .unwrap_or(0);
+
+    let end = samples
+        .chunks(window)
+        .enumerate()
+        .rev()
+        .find(|(_, chunk)| rms(chunk) > threshold)
+        .map(|(i, _)| ((i + 1) * window + window / 2).min(samples.len()))
+        .unwrap_or(samples.len());
+
+    let trimmed_end = end.max(start + min_samples).min(samples.len());
+
+    eprintln!(
+        "[VAD] original={}ms trimmed={}ms (removed {}ms silence)",
+        samples.len() * 1000 / sample_rate as usize,
+        (trimmed_end - start) * 1000 / sample_rate as usize,
+        (samples.len() - (trimmed_end - start)) * 1000 / sample_rate as usize
+    );
+
+    samples[start..trimmed_end].to_vec()
 }
 
 fn to_mono(samples: &[f32], channels: u16) -> Vec<f32> {

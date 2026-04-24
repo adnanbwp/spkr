@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Instant;
 
 use crate::settings::{LocalModel, TranscriptionBackend};
@@ -11,6 +12,38 @@ pub struct TranscriptionTiming {
     pub total_transcription_ms: u64,
 }
 
+pub struct CachedWhisperModel {
+    pub context: Arc<whisper_rs::WhisperContext>,
+    pub model_path: PathBuf,
+}
+
+// Safety: WhisperContext wraps a C pointer; we only access it from spawn_blocking
+// (one blocking thread at a time, serialized by the Mutex in AppState).
+unsafe impl Send for CachedWhisperModel {}
+unsafe impl Sync for CachedWhisperModel {}
+
+pub fn warm_model_cache(app: &tauri::AppHandle, path: PathBuf) {
+    use tauri::Manager;
+    use whisper_rs::{WhisperContext, WhisperContextParameters};
+
+    eprintln!("[CACHE] Loading model into cache: {}", path.display());
+    match WhisperContext::new_with_params(
+        path.to_str().unwrap_or(""),
+        WhisperContextParameters::default(),
+    ) {
+        Ok(ctx) => {
+            let state = app.state::<crate::state::AppState>();
+            let mut cached = state.cached_model.lock().unwrap();
+            *cached = Some(CachedWhisperModel {
+                context: Arc::new(ctx),
+                model_path: path,
+            });
+            eprintln!("[CACHE] Model cached successfully");
+        }
+        Err(e) => eprintln!("[CACHE] Failed to pre-load model: {e}"),
+    }
+}
+
 pub async fn transcribe(
     audio: Vec<f32>,
     backend: TranscriptionBackend,
@@ -21,9 +54,20 @@ pub async fn transcribe(
     match backend {
         TranscriptionBackend::Local => {
             let path = crate::models::model_path(app, &local_model)?;
-            let (text, timing) = tokio::task::spawn_blocking(move || run_local(audio, path))
-                .await
-                .map_err(|e| format!("Thread error: {e}"))??;
+            // Try to use cached context (cache hit = near-zero model_load_ms)
+            let cached_ctx = {
+                use tauri::Manager;
+                let state = app.state::<crate::state::AppState>();
+                let guard = state.cached_model.lock().unwrap();
+                guard
+                    .as_ref()
+                    .filter(|m| m.model_path == path)
+                    .map(|m| m.context.clone())
+            };
+            let (text, timing) =
+                tokio::task::spawn_blocking(move || run_local(audio, path, cached_ctx))
+                    .await
+                    .map_err(|e| format!("Thread error: {e}"))??;
             Ok((text, Some(timing)))
         }
         TranscriptionBackend::Groq => {
@@ -33,20 +77,32 @@ pub async fn transcribe(
     }
 }
 
-fn run_local(audio: Vec<f32>, model_path: PathBuf) -> Result<(String, TranscriptionTiming), String> {
-    use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
-
-    if !model_path.exists() {
-        return Err(format!("Model not downloaded: {}", model_path.display()));
-    }
+fn run_local(
+    audio: Vec<f32>,
+    model_path: PathBuf,
+    cached_ctx: Option<Arc<whisper_rs::WhisperContext>>,
+) -> Result<(String, TranscriptionTiming), String> {
+    use whisper_rs::{FullParams, SamplingStrategy};
 
     let t0 = Instant::now();
 
-    let ctx = WhisperContext::new_with_params(
-        model_path.to_str().ok_or("Invalid model path")?,
-        WhisperContextParameters::default(),
-    )
-    .map_err(|e| format!("Failed to load model: {e}"))?;
+    let ctx = if let Some(c) = cached_ctx {
+        eprintln!("[CACHE] Cache hit — skipping model load");
+        c
+    } else {
+        use whisper_rs::{WhisperContext, WhisperContextParameters};
+        if !model_path.exists() {
+            return Err(format!("Model not downloaded: {}", model_path.display()));
+        }
+        eprintln!("[CACHE] Cache miss — loading model from disk");
+        Arc::new(
+            WhisperContext::new_with_params(
+                model_path.to_str().ok_or("Invalid model path")?,
+                WhisperContextParameters::default(),
+            )
+            .map_err(|e| format!("Failed to load model: {e}"))?,
+        )
+    };
 
     let model_load_ms = t0.elapsed().as_millis() as u64;
     eprintln!("[TIMING] model_load={}ms", model_load_ms);
@@ -78,12 +134,15 @@ fn run_local(audio: Vec<f32>, model_path: PathBuf) -> Result<(String, Transcript
     let total_transcription_ms = t0.elapsed().as_millis() as u64;
     eprintln!("[TIMING] total_transcription={}ms", total_transcription_ms);
 
-    Ok((text.trim().to_string(), TranscriptionTiming {
-        model_load_ms,
-        inference_ms,
-        segment_collect_ms,
-        total_transcription_ms,
-    }))
+    Ok((
+        text.trim().to_string(),
+        TranscriptionTiming {
+            model_load_ms,
+            inference_ms,
+            segment_collect_ms,
+            total_transcription_ms,
+        },
+    ))
 }
 
 async fn run_groq(audio: Vec<f32>, api_key: &str) -> Result<String, String> {
@@ -125,7 +184,6 @@ async fn run_groq(audio: Vec<f32>, api_key: &str) -> Result<String, String> {
         .ok_or_else(|| "Unexpected Groq response format".to_string())
 }
 
-// Encode f32 PCM samples as a 16-bit PCM WAV in memory (no hound needed).
 fn pcm_to_wav(samples: &[f32], sample_rate: u32) -> Vec<u8> {
     let num_channels: u16 = 1;
     let bits_per_sample: u16 = 16;
@@ -153,4 +211,3 @@ fn pcm_to_wav(samples: &[f32], sample_rate: u32) -> Vec<u8> {
     }
     buf
 }
-

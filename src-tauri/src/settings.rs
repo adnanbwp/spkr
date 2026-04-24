@@ -83,6 +83,23 @@ pub fn save_settings(
         settings.ptt_hotkey.as_deref(),
     );
 
+    // Invalidate model cache — backend or model may have changed
+    {
+        let mut cached = state.cached_model.lock().unwrap();
+        *cached = None;
+    }
+    // Spawn background re-load for the new settings
+    if matches!(settings.backend, TranscriptionBackend::Local) {
+        if let Ok(path) = crate::models::model_path(&app, &settings.local_model) {
+            if path.exists() {
+                let handle = app.clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    crate::transcription::warm_model_cache(&handle, path);
+                });
+            }
+        }
+    }
+
     Ok(())
 }
 

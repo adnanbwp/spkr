@@ -49,6 +49,24 @@ pub fn run() {
                 );
             }
 
+            // Pre-load local Whisper model into cache at startup
+            {
+                let (backend, local_model) = {
+                    let s = app_state.settings.lock().unwrap();
+                    (s.backend.clone(), s.local_model.clone())
+                };
+                if matches!(backend, settings::TranscriptionBackend::Local) {
+                    if let Ok(path) = models::model_path(app.handle(), &local_model) {
+                        if path.exists() {
+                            let handle = app.handle().clone();
+                            tauri::async_runtime::spawn_blocking(move || {
+                                transcription::warm_model_cache(&handle, path);
+                            });
+                        }
+                    }
+                }
+            }
+
             // Register app to run at login
             {
                 use tauri_plugin_autostart::ManagerExt;

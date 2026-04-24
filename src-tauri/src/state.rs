@@ -2,7 +2,8 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager};
 
-use crate::settings::{AppSettings};
+use crate::settings::AppSettings;
+use crate::transcription::CachedWhisperModel;
 
 // RecordingState enum — drives overlay color and hotkey behavior
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,6 +30,7 @@ pub struct AppState {
     pub recording_state: Mutex<RecordingState>,
     pub settings: Mutex<AppSettings>,
     pub audio_buffer: Arc<Mutex<Vec<f32>>>,
+    pub cached_model: Mutex<Option<CachedWhisperModel>>,
 }
 
 impl Default for AppState {
@@ -37,6 +39,7 @@ impl Default for AppState {
             recording_state: Mutex::new(RecordingState::Inactive),
             settings: Mutex::new(AppSettings::default()),
             audio_buffer: Arc::new(Mutex::new(Vec::new())),
+            cached_model: Mutex::new(None),
         }
     }
 }

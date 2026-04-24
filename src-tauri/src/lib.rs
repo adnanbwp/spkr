@@ -97,8 +97,8 @@ pub fn run() {
                     let scale = monitor.scale_factor();
                     let size = monitor.size();
                     let logical_w = size.width as f64 / scale;
-                    // Window is 320px wide; keep its right edge 16px from screen edge
-                    let x = logical_w - 320.0 - 16.0;
+                    // Window is 80px wide; keep its right edge 16px from screen edge
+                    let x = logical_w - 80.0 - 16.0;
                     let _ = overlay.set_position(tauri::LogicalPosition::new(x, 16.0));
                 }
             }

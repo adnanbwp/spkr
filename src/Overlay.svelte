@@ -4,28 +4,12 @@
 
   type RecordingState = 'Inactive' | 'Listening' | 'Recording' | 'Transcribing';
 
-  interface TranscriptionTiming {
-    model_load_ms: number;
-    inference_ms: number;
-    segment_collect_ms: number;
-    total_transcription_ms: number;
-  }
-
-  interface TranscriptionCompletePayload {
-    text: string;
-    timing?: TranscriptionTiming;
-  }
-
   let currentState: RecordingState = 'Inactive';
   let errorFlash = false;
   let errorTimer: ReturnType<typeof setTimeout> | null = null;
 
-  let timingText = '';
-  let timingTimer: ReturnType<typeof setTimeout> | null = null;
-
   let unlistenState: (() => void) | null = null;
   let unlistenError: (() => void) | null = null;
-  let unlistenComplete: (() => void) | null = null;
 
   onMount(async () => {
     unlistenState = await listen<{ state: RecordingState }>('state-changed', (event) => {
@@ -37,23 +21,12 @@
       if (errorTimer) clearTimeout(errorTimer);
       errorTimer = setTimeout(() => { errorFlash = false; }, 2000);
     });
-
-    unlistenComplete = await listen<TranscriptionCompletePayload>('transcription-complete', (event) => {
-      const t = event.payload.timing;
-      if (t) {
-        timingText = `load ${t.model_load_ms}ms · infer ${t.inference_ms}ms · total ${t.total_transcription_ms}ms`;
-        if (timingTimer) clearTimeout(timingTimer);
-        timingTimer = setTimeout(() => { timingText = ''; }, 5000);
-      }
-    });
   });
 
   onDestroy(() => {
     unlistenState?.();
     unlistenError?.();
-    unlistenComplete?.();
     if (errorTimer) clearTimeout(errorTimer);
-    if (timingTimer) clearTimeout(timingTimer);
   });
 
   $: circleColor = (() => {
@@ -72,12 +45,7 @@
 </script>
 
 {#if isVisible}
-  <!-- Outer row: timing on the left, mic on the right -->
   <div class="container">
-    {#if timingText}
-      <div class="timing">{timingText}</div>
-    {/if}
-
     <div
       class="circle"
       class:pulse={isPulsing}
@@ -128,37 +96,22 @@
     overflow: hidden;
   }
 
-  /* Full-width row: timing pill on the left, mic circle on the right */
   .container {
-    width: 320px;
+    width: 80px;
     height: 80px;
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 8px;
-    pointer-events: none;
-  }
-
-  .circle {
-    flex-shrink: 0;
-    width: 60px;
-    height: 60px;
-    border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
     pointer-events: none;
   }
 
-  .timing {
-    white-space: nowrap;
-    font-size: 10px;
-    font-family: monospace;
-    color: rgba(255, 255, 255, 0.9);
-    background: rgba(0, 0, 0, 0.55);
-    border-radius: 4px;
-    padding: 2px 6px;
+  .circle {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     pointer-events: none;
   }
 

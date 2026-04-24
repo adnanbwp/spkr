@@ -115,6 +115,18 @@ fn run_local(
     params.set_print_realtime(false);
     params.set_print_timestamps(false);
 
+    // PTT dictation tuning: short, single-speaker, English-only utterances
+    params.set_n_threads(4);         // optimal for short clips on modern CPUs
+    params.set_no_context(true);     // no prior context between independent PTT calls
+    params.set_single_segment(true); // skip boundary detection, return one segment
+    params.set_suppress_blank(true); // skip blank output fallback
+    params.set_suppress_nst(true);   // suppress non-speech tokens
+    params.set_temperature(0.0);     // pure greedy, no temperature fallback sampling
+
+    // Constrain to actual audio duration — avoids processing empty 30s tail window
+    let audio_duration_ms = (audio.len() as i32 * 1000) / 16000;
+    params.set_duration_ms(audio_duration_ms);
+
     let t_infer = Instant::now();
     state
         .full(params, &audio)

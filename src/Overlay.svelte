@@ -4,12 +4,28 @@
 
   type RecordingState = 'Inactive' | 'Listening' | 'Recording' | 'Transcribing';
 
+  interface TranscriptionTiming {
+    model_load_ms: number;
+    inference_ms: number;
+    segment_collect_ms: number;
+    total_transcription_ms: number;
+  }
+
+  interface TranscriptionCompletePayload {
+    text: string;
+    timing?: TranscriptionTiming;
+  }
+
   let currentState: RecordingState = 'Inactive';
   let errorFlash = false;
   let errorTimer: ReturnType<typeof setTimeout> | null = null;
 
+  let timingText = '';
+  let timingTimer: ReturnType<typeof setTimeout> | null = null;
+
   let unlistenState: (() => void) | null = null;
   let unlistenError: (() => void) | null = null;
+  let unlistenComplete: (() => void) | null = null;
 
   onMount(async () => {
     unlistenState = await listen<{ state: RecordingState }>('state-changed', (event) => {
@@ -21,12 +37,23 @@
       if (errorTimer) clearTimeout(errorTimer);
       errorTimer = setTimeout(() => { errorFlash = false; }, 2000);
     });
+
+    unlistenComplete = await listen<TranscriptionCompletePayload>('transcription-complete', (event) => {
+      const t = event.payload.timing;
+      if (t) {
+        timingText = `load ${t.model_load_ms}ms · infer ${t.inference_ms}ms · total ${t.total_transcription_ms}ms`;
+        if (timingTimer) clearTimeout(timingTimer);
+        timingTimer = setTimeout(() => { timingText = ''; }, 5000);
+      }
+    });
   });
 
   onDestroy(() => {
     unlistenState?.();
     unlistenError?.();
+    unlistenComplete?.();
     if (errorTimer) clearTimeout(errorTimer);
+    if (timingTimer) clearTimeout(timingTimer);
   });
 
   $: circleColor = (() => {
@@ -85,6 +112,10 @@
         </svg>
       {/if}
     </div>
+
+    {#if timingText}
+      <div class="timing">{timingText}</div>
+    {/if}
   </div>
 {/if}
 
@@ -98,10 +129,9 @@
 
   .container {
     width: 80px;
-    height: 80px;
     display: flex;
+    flex-direction: column;
     align-items: center;
-    justify-content: center;
     pointer-events: none;
   }
 
@@ -112,6 +142,18 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    pointer-events: none;
+  }
+
+  .timing {
+    margin-top: 4px;
+    white-space: nowrap;
+    font-size: 9px;
+    font-family: monospace;
+    color: rgba(255, 255, 255, 0.8);
+    background: rgba(0, 0, 0, 0.5);
+    border-radius: 3px;
+    padding: 1px 4px;
     pointer-events: none;
   }
 

@@ -1,6 +1,15 @@
 use std::path::PathBuf;
+use std::time::Instant;
 
 use crate::settings::{LocalModel, TranscriptionBackend};
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct TranscriptionTiming {
+    pub model_load_ms: u64,
+    pub inference_ms: u64,
+    pub segment_collect_ms: u64,
+    pub total_transcription_ms: u64,
+}
 
 pub async fn transcribe(
     audio: Vec<f32>,
@@ -8,30 +17,39 @@ pub async fn transcribe(
     local_model: LocalModel,
     groq_api_key: String,
     app: &tauri::AppHandle,
-) -> Result<String, String> {
+) -> Result<(String, Option<TranscriptionTiming>), String> {
     match backend {
         TranscriptionBackend::Local => {
             let path = crate::models::model_path(app, &local_model)?;
-            tokio::task::spawn_blocking(move || run_local(audio, path))
+            let (text, timing) = tokio::task::spawn_blocking(move || run_local(audio, path))
                 .await
-                .map_err(|e| format!("Thread error: {e}"))?
+                .map_err(|e| format!("Thread error: {e}"))??;
+            Ok((text, Some(timing)))
         }
-        TranscriptionBackend::Groq => run_groq(audio, &groq_api_key).await,
+        TranscriptionBackend::Groq => {
+            let text = run_groq(audio, &groq_api_key).await?;
+            Ok((text, None))
+        }
     }
 }
 
-fn run_local(audio: Vec<f32>, model_path: PathBuf) -> Result<String, String> {
+fn run_local(audio: Vec<f32>, model_path: PathBuf) -> Result<(String, TranscriptionTiming), String> {
     use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
     if !model_path.exists() {
         return Err(format!("Model not downloaded: {}", model_path.display()));
     }
 
+    let t0 = Instant::now();
+
     let ctx = WhisperContext::new_with_params(
         model_path.to_str().ok_or("Invalid model path")?,
         WhisperContextParameters::default(),
     )
     .map_err(|e| format!("Failed to load model: {e}"))?;
+
+    let model_load_ms = t0.elapsed().as_millis() as u64;
+    eprintln!("[TIMING] model_load={}ms", model_load_ms);
 
     let mut state = ctx.create_state().map_err(|e| format!("Whisper state error: {e}"))?;
 
@@ -41,10 +59,14 @@ fn run_local(audio: Vec<f32>, model_path: PathBuf) -> Result<String, String> {
     params.set_print_realtime(false);
     params.set_print_timestamps(false);
 
+    let t_infer = Instant::now();
     state
         .full(params, &audio)
         .map_err(|e| format!("Transcription failed: {e}"))?;
+    let inference_ms = t_infer.elapsed().as_millis() as u64;
+    eprintln!("[TIMING] inference={}ms", inference_ms);
 
+    let t_seg = Instant::now();
     let n = state.full_n_segments();
     let mut text = String::new();
     for i in 0..n {
@@ -52,8 +74,16 @@ fn run_local(audio: Vec<f32>, model_path: PathBuf) -> Result<String, String> {
             text.push_str(seg.to_str().map_err(|e| format!("Segment error: {e}"))?);
         }
     }
+    let segment_collect_ms = t_seg.elapsed().as_millis() as u64;
+    let total_transcription_ms = t0.elapsed().as_millis() as u64;
+    eprintln!("[TIMING] total_transcription={}ms", total_transcription_ms);
 
-    Ok(text.trim().to_string())
+    Ok((text.trim().to_string(), TranscriptionTiming {
+        model_load_ms,
+        inference_ms,
+        segment_collect_ms,
+        total_transcription_ms,
+    }))
 }
 
 async fn run_groq(audio: Vec<f32>, api_key: &str) -> Result<String, String> {
@@ -123,3 +153,4 @@ fn pcm_to_wav(samples: &[f32], sample_rate: u32) -> Vec<u8> {
     }
     buf
 }
+

@@ -1,7 +1,12 @@
+use std::sync::Mutex;
+use std::time::Instant;
+
 use tauri::{AppHandle, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 use crate::state::{AppState, RecordingState};
+
+static PTT_PRESS_TIME: Mutex<Option<Instant>> = Mutex::new(None);
 
 /// Register global hotkeys from settings strings.
 /// Unregisters all existing shortcuts first, then registers toggle and/or PTT.
@@ -101,6 +106,7 @@ fn on_toggle_press(app: &AppHandle) {
 }
 
 fn on_ptt_press(app: &AppHandle) {
+    *PTT_PRESS_TIME.lock().unwrap() = Some(Instant::now());
     let state = app.state::<AppState>();
     if matches!(
         *state.recording_state.lock().unwrap(),
@@ -113,6 +119,13 @@ fn on_ptt_press(app: &AppHandle) {
 }
 
 fn on_ptt_release(app: &AppHandle) {
+    let held_ms = PTT_PRESS_TIME
+        .lock()
+        .unwrap()
+        .map(|t| t.elapsed().as_millis())
+        .unwrap_or(0);
+    eprintln!("[TIMING] PTT held={}ms", held_ms);
+
     let current = {
         let state = app.state::<AppState>();
         let guard = state.recording_state.lock().unwrap();

@@ -1,4 +1,5 @@
 use std::sync::Mutex;
+use std::time::Instant;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use tauri::{Emitter, Manager};
@@ -13,6 +14,7 @@ unsafe impl Sync for StreamHandle {}
 static ACTIVE_STREAM: Mutex<Option<StreamHandle>> = Mutex::new(None);
 static CAPTURE_RATE: Mutex<u32> = Mutex::new(16000);
 static CAPTURE_CHANNELS: Mutex<u16> = Mutex::new(1);
+static PTT_RELEASE_TIME: Mutex<Option<Instant>> = Mutex::new(None);
 
 #[tauri::command]
 pub fn list_input_devices() -> Result<Vec<String>, String> {
@@ -114,10 +116,14 @@ pub fn start_recording_internal(app: &tauri::AppHandle) -> Result<(), String> {
 }
 
 pub async fn stop_recording_internal(app: tauri::AppHandle) -> Result<(), String> {
+    let t_release = Instant::now();
+    *PTT_RELEASE_TIME.lock().map_err(|e| e.to_string())? = Some(t_release);
+
     {
         let mut active = ACTIVE_STREAM.lock().map_err(|e| e.to_string())?;
         *active = None;
     }
+    let t_stream_dropped = Instant::now();
 
     let capture_rate = *CAPTURE_RATE.lock().map_err(|e| e.to_string())?;
     let capture_channels = *CAPTURE_CHANNELS.lock().map_err(|e| e.to_string())?;
@@ -135,7 +141,6 @@ pub async fn stop_recording_internal(app: tauri::AppHandle) -> Result<(), String
             return Ok(());
         }
 
-        // Convert to mono then resample to 16 kHz for Whisper
         let mono = if capture_channels > 1 {
             to_mono(&raw_audio, capture_channels)
         } else {
@@ -147,6 +152,14 @@ pub async fn stop_recording_internal(app: tauri::AppHandle) -> Result<(), String
             mono
         };
 
+        let t_preprocess_done = Instant::now();
+        eprintln!(
+            "[TIMING] stream_drop={}ms preprocess={}ms audio_samples={}",
+            t_stream_dropped.duration_since(t_release).as_millis(),
+            t_preprocess_done.duration_since(t_stream_dropped).as_millis(),
+            audio.len()
+        );
+
         let (backend, local_model, groq_api_key) = {
             let s = state.settings.lock().map_err(|e| e.to_string())?;
             (s.backend.clone(), s.local_model.clone(), s.groq_api_key.clone())
@@ -155,17 +168,31 @@ pub async fn stop_recording_internal(app: tauri::AppHandle) -> Result<(), String
         (audio, backend, local_model, groq_api_key)
     };
 
+    let t_transcribe_start = Instant::now();
     let result =
         crate::transcription::transcribe(audio, backend, local_model, groq_api_key, &app).await;
+    let transcribe_elapsed = t_transcribe_start.elapsed().as_millis() as u64;
 
     let state = app.state::<AppState>();
     match result {
-        Ok(text) => {
+        Ok((text, timing)) => {
+            let t_inject_start = Instant::now();
             if let Err(e) = crate::injector::inject_text(&text) {
                 eprintln!("Injection error: {e}");
                 let _ = app.emit("transcription-error", serde_json::json!({ "error": e }));
             }
-            let _ = app.emit("transcription-complete", serde_json::json!({ "text": text }));
+            let inject_ms = t_inject_start.elapsed().as_millis() as u64;
+            let total_ms = t_release.elapsed().as_millis() as u64;
+
+            eprintln!(
+                "[TIMING] transcribe={}ms inject={}ms TOTAL={}ms",
+                transcribe_elapsed, inject_ms, total_ms
+            );
+
+            let _ = app.emit(
+                "transcription-complete",
+                serde_json::json!({ "text": text, "timing": timing }),
+            );
         }
         Err(e) => {
             eprintln!("Transcription error: {e}");

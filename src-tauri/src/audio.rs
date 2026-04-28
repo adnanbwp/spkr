@@ -1,5 +1,6 @@
 use std::sync::Mutex;
 use std::time::Instant;
+use tokio::time::{sleep, Duration};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use tauri::{Emitter, Manager};
@@ -15,6 +16,14 @@ static ACTIVE_STREAM: Mutex<Option<StreamHandle>> = Mutex::new(None);
 static CAPTURE_RATE: Mutex<u32> = Mutex::new(16000);
 static CAPTURE_CHANNELS: Mutex<u16> = Mutex::new(1);
 static PTT_RELEASE_TIME: Mutex<Option<Instant>> = Mutex::new(None);
+
+/// How long to keep the stream alive after PTT release so cpal's hardware
+/// ring buffer can drain fully into the callback before we drop it.
+const DRAIN_WINDOW_MS: u64 = 150;
+
+/// End-of-speech padding after the last loud VAD window. Wide enough to
+/// capture word-final fricatives and soft consonants below the RMS threshold.
+const VAD_END_PADDING_MS: usize = 200;
 
 #[tauri::command]
 pub fn list_input_devices() -> Result<Vec<String>, String> {
@@ -119,6 +128,18 @@ pub async fn stop_recording_internal(app: tauri::AppHandle) -> Result<(), String
     let t_release = Instant::now();
     *PTT_RELEASE_TIME.lock().map_err(|e| e.to_string())? = Some(t_release);
 
+    // Immediately signal Transcribing: gives UI feedback and prevents any
+    // concurrent hotkey press from starting a new recording during the drain.
+    {
+        let state = app.state::<AppState>();
+        set_state(&app, &state, RecordingState::Transcribing);
+    }
+
+    // Keep the stream alive so cpal's hardware ring buffer can deliver its
+    // last frames to the callback before we drop it (~20-100ms of audio would
+    // otherwise be lost on immediate drop).
+    sleep(Duration::from_millis(DRAIN_WINDOW_MS)).await;
+
     {
         let mut active = ACTIVE_STREAM.lock().map_err(|e| e.to_string())?;
         *active = None;
@@ -155,7 +176,8 @@ pub async fn stop_recording_internal(app: tauri::AppHandle) -> Result<(), String
 
         let t_preprocess_done = Instant::now();
         eprintln!(
-            "[TIMING] stream_drop={}ms preprocess={}ms audio_samples={}",
+            "[TIMING] drain={}ms stream_drop={}ms preprocess={}ms audio_samples={}",
+            DRAIN_WINDOW_MS,
             t_stream_dropped.duration_since(t_release).as_millis(),
             t_preprocess_done.duration_since(t_stream_dropped).as_millis(),
             audio.len()
@@ -165,7 +187,6 @@ pub async fn stop_recording_internal(app: tauri::AppHandle) -> Result<(), String
             let s = state.settings.lock().map_err(|e| e.to_string())?;
             (s.backend.clone(), s.local_model.clone(), s.groq_api_key.clone())
         };
-        set_state(&app, &state, RecordingState::Transcribing);
         (audio, backend, local_model, groq_api_key)
     };
 
@@ -228,12 +249,13 @@ fn trim_silence(samples: &[f32], sample_rate: u32) -> Vec<f32> {
         .map(|(i, _)| i * window)
         .unwrap_or(0);
 
+    let end_padding = (sample_rate as usize * VAD_END_PADDING_MS) / 1000;
     let end = samples
         .chunks(window)
         .enumerate()
         .rev()
         .find(|(_, chunk)| rms(chunk) > threshold)
-        .map(|(i, _)| ((i + 1) * window + window / 2).min(samples.len()))
+        .map(|(i, _)| ((i + 1) * window + end_padding).min(samples.len()))
         .unwrap_or(samples.len());
 
     let trimmed_end = end.max(start + min_samples).min(samples.len());
